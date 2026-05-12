@@ -1,8 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // CENTER78 앱 데이터 (app/data 단일 문서)
+    match /app/data {
+      // 읽기: 허용 (앱 로그인 전 코치 목록 표시에 필요)
+      allow read: if true;
+
+      // 쓰기: 데이터 구조가 올바를 때만 허용 (악의적 덮어쓰기 방지)
+      allow write: if request.resource.data.keys().hasAll(['coaches', 'bookings', 'adminPin'])
+                   && request.resource.data.coaches is list
+                   && request.resource.data.bookings is list
+                   && request.resource.data.adminPin is string;
+    }
+
+    // 그 외 모든 경로: 차단
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
