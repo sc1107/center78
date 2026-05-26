@@ -151,33 +151,12 @@ function reducer(state, action) {
 }
 
 // ─── 10회차 날짜 계산 헬퍼 ───
-// date + coachId 조합으로 반환하여, 코치별로 본인 10회차만 필터 가능
+// 각 예약의 sessionNumber가 정확히 개별 회원별로 저장되어 있으므로
+// sessionNumber === 10 인 예약 날짜만 반환 → 회원별 개인 10회차만 강조
 function getTenthSessionDates(bookings) {
-  const results = []; // { date, coachId }
-  const groups = {};
-  bookings.forEach(b => {
-    const key = `${b.clientName}__${b.coachId}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(b);
-  });
-
-  Object.values(groups).forEach(group => {
-    const sorted = [...group].sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.time.localeCompare(b.time);
-    });
-
-    sorted.forEach((booking, idx) => {
-      if (booking.sessionNumber === 1) {
-        const tenthIdx = idx + 9;
-        if (tenthIdx < sorted.length) {
-          results.push({ date: sorted[tenthIdx].date, coachId: sorted[tenthIdx].coachId });
-        }
-      }
-    });
-  });
-
-  return results;
+  return bookings
+    .filter(b => b.sessionNumber === 10)
+    .map(b => ({ date: b.date, coachId: b.coachId }));
 }
 
 // 특정 날짜가 해당 유저에게 10회차 날짜인지 판별
