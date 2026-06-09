@@ -1407,20 +1407,17 @@ export default function PTBookingApp() {
   });
 
   // Firestore 데이터가 초기화된 기본값(또는 빈 값)인지 확인
+  // 기본값 판단 기준: 예약 없음 + 코치 id/name 기본값과 동일 + PIN이 "0000"
+  // → 셋 중 하나라도 다르면 실사용 데이터로 간주 (오판단 방지)
   const isDefaultData = (data) => {
     if (!data) return true;
-    // 코치가 없으면 기본값으로 간주
     if (!data.coaches || data.coaches.length === 0) return true;
-    // 예약이 있으면 실사용 데이터
     if (data.bookings && data.bookings.length > 0) return false;
-    // 코치 수가 기본값과 같고, id/name도 동일하면 기본값
-    if (data.coaches.length === DEFAULT_COACHES.length) {
-      return data.coaches.every((c, i) =>
-        c.id === DEFAULT_COACHES[i]?.id && c.name === DEFAULT_COACHES[i]?.name
-      );
-    }
-    // 코치 수가 다르면 사용자가 수정한 실사용 데이터
-    return false;
+    if (data.adminPin && data.adminPin !== "0000") return false;
+    if (data.coaches.length !== DEFAULT_COACHES.length) return false;
+    return data.coaches.every((c, i) =>
+      c.id === DEFAULT_COACHES[i]?.id && c.name === DEFAULT_COACHES[i]?.name
+    );
   };
 
   // localStorage 백업 읽기
@@ -1492,7 +1489,7 @@ export default function PTBookingApp() {
     return () => unsubscribe();
   }, []);
 
-  // 상태 변경 시 Firestore + localStorage 동시 저장
+  // 상태 변경 시 Firestore + localStorage 동시 저장 (실패 시 3회 재시도)
   useEffect(() => {
     if (!loaded) return;
     const dataToSave = {
@@ -1503,13 +1500,23 @@ export default function PTBookingApp() {
     const current = serializeData(dataToSave);
     if (current === lastSyncedRef.current) return; // Firestore발 변경이면 skip
     lastSyncedRef.current = current;
-    // localStorage 백업 (항상)
     try { localStorage.setItem("center78_backup", current); } catch(_) {}
-    // Firestore 저장
+
     const docRef = doc(db, "app", "data");
-    setDoc(docRef, { ...dataToSave, lastModified: Date.now() })
-      .then(() => setSyncError(false))
-      .catch(e => { console.error("저장 실패:", e.code); setSyncError(true); });
+    const payload = { ...dataToSave, lastModified: Date.now() };
+    const saveWithRetry = (attempt) => {
+      setDoc(docRef, payload)
+        .then(() => setSyncError(false))
+        .catch(e => {
+          console.error(`저장 실패 (시도 ${attempt}):`, e.code);
+          if (attempt < 3) {
+            setTimeout(() => saveWithRetry(attempt + 1), attempt * 2000);
+          } else {
+            setSyncError(true);
+          }
+        });
+    };
+    saveWithRetry(1);
   }, [state.coaches, state.bookings, state.adminPin, loaded]);
 
   if (!state.currentUser) {

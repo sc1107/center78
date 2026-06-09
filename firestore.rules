@@ -8,10 +8,11 @@ service cloud.firestore {
       allow read: if true;
 
       // 쓰기: 데이터 구조가 올바를 때만 허용 (악의적 덮어쓰기 방지)
-      allow write: if request.resource.data.keys().hasAll(['coaches', 'bookings', 'adminPin'])
+      allow write: if request.resource.data.keys().hasAll(['coaches', 'bookings', 'adminPin', 'lastModified'])
                    && request.resource.data.coaches is list
                    && request.resource.data.bookings is list
-                   && request.resource.data.adminPin is string;
+                   && request.resource.data.adminPin is string
+                   && request.resource.data.lastModified is number;
     }
 
     // 그 외 모든 경로: 차단
