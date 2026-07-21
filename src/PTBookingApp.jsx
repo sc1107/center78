@@ -146,6 +146,13 @@ function reducer(state, action) {
     case "CLEAR_NOTIFICATION": return { ...state, notification: null };
     case "PREV_MONTH": { const d = new Date(state.currentDate); d.setMonth(d.getMonth() - 1); return { ...state, currentDate: d }; }
     case "NEXT_MONTH": { const d = new Date(state.currentDate); d.setMonth(d.getMonth() + 1); return { ...state, currentDate: d }; }
+    case "IMPORT_DATA": return {
+      ...state,
+      coaches: action.payload.coaches,
+      bookings: action.payload.bookings,
+      adminPin: action.payload.adminPin,
+      notification: { type: "success", message: "데이터를 성공적으로 가져왔습니다!" },
+    };
     default: return state;
   }
 }
@@ -454,7 +461,7 @@ function LoginScreen({ onLogin, coaches, adminPin }) {
 // ─── 코치 관리 모달 (관리자 전용) ───
 const EMOJI_OPTIONS = ["🏋️","🧘","💪","🤸","🏃","⛹️","🚴","🤾","🧗","🏊","🥊","🎯","🏒"];
 
-function CoachManagerModal({ coaches, bookings, adminPin, onClose, onUpdateName, onAddCoach, onDeleteCoach, onUpdateCoachPin, onUpdateAdminPin }) {
+function CoachManagerModal({ coaches, bookings, adminPin, onClose, onUpdateName, onAddCoach, onDeleteCoach, onUpdateCoachPin, onUpdateAdminPin, onImportData }) {
   const [edits, setEdits] = useState(coaches.reduce((acc, c) => ({ ...acc, [c.id]: c.name }), {}));
   const [pinEdits, setPinEdits] = useState(coaches.reduce((acc, c) => ({ ...acc, [c.id]: c.pin || "0000" }), {}));
   const [adminPinEdit, setAdminPinEdit] = useState(adminPin || "0000");
@@ -464,6 +471,37 @@ function CoachManagerModal({ coaches, bookings, adminPin, onClose, onUpdateName,
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showPinSection, setShowPinSection] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState("");
+
+  const handleExport = () => {
+    const data = JSON.stringify({ coaches, bookings, adminPin }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `center78_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    setImportError("");
+    try {
+      const parsed = JSON.parse(importText);
+      if (!Array.isArray(parsed.coaches) || !Array.isArray(parsed.bookings) || typeof parsed.adminPin !== "string") {
+        setImportError("올바른 center78 백업 파일이 아닙니다.");
+        return;
+      }
+      if (!window.confirm(`코치 ${parsed.coaches.length}명, 예약 ${parsed.bookings.length}건을 가져옵니다.\n현재 데이터가 덮어써집니다. 계속할까요?`)) return;
+      onImportData(parsed);
+      setShowImport(false);
+      setImportText("");
+    } catch {
+      setImportError("JSON 형식이 올바르지 않습니다.");
+    }
+  };
 
   const handleAdd = () => {
     if (!newName.trim() || !/^\d{4}$/.test(newPin)) return;
@@ -716,6 +754,42 @@ function CoachManagerModal({ coaches, bookings, adminPin, onClose, onUpdateName,
             💡 현재 코치 {coaches.length}명 등록됨 · 기본 관리자 PIN: 0000<br/>
             비밀번호는 숫자 4자리만 가능합니다.
           </p>
+        </div>
+
+        {/* 데이터 내보내기 / 가져오기 */}
+        <div style={{ marginTop: 16, padding: "14px", background: C.whiteGhost, borderRadius: 10 }}>
+          <p style={{ color: C.grayText, fontSize: 12, marginBottom: 10, fontWeight: 600 }}>📦 데이터 백업 / 이전</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleExport} style={{
+              flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.grayMid}`,
+              background: "transparent", color: C.white, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>⬇️ 내보내기</button>
+            <button onClick={() => { setShowImport(v => !v); setImportError(""); }} style={{
+              flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.grayMid}`,
+              background: "transparent", color: C.white, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>⬆️ 가져오기</button>
+          </div>
+          {showImport && (
+            <div style={{ marginTop: 10 }}>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="백업 JSON을 붙여넣으세요…"
+                rows={5}
+                style={{
+                  width: "100%", background: C.black, color: C.white, border: `1px solid ${C.grayMid}`,
+                  borderRadius: 8, padding: "8px 10px", fontSize: 12, resize: "vertical",
+                  fontFamily: "monospace", boxSizing: "border-box",
+                }}
+              />
+              {importError && <p style={{ color: "#f87171", fontSize: 12, marginTop: 4 }}>{importError}</p>}
+              <button onClick={handleImport} style={{
+                width: "100%", marginTop: 8, padding: "10px 0", borderRadius: 10,
+                background: C.yellow, color: C.black, fontSize: 13, fontWeight: 700,
+                border: "none", cursor: "pointer",
+              }}>가져오기 실행</button>
+            </div>
+          )}
         </div>
       </div>
       <style>{`
@@ -1678,7 +1752,8 @@ export default function PTBookingApp() {
           onAddCoach={(coach) => dispatch({ type: "ADD_COACH", payload: coach })}
           onDeleteCoach={(id) => dispatch({ type: "DELETE_COACH", payload: id })}
           onUpdateCoachPin={(id, pin) => dispatch({ type: "UPDATE_COACH_PIN", payload: { id, pin } })}
-          onUpdateAdminPin={(pin) => dispatch({ type: "UPDATE_ADMIN_PIN", payload: pin })} />
+          onUpdateAdminPin={(pin) => dispatch({ type: "UPDATE_ADMIN_PIN", payload: pin })}
+          onImportData={(data) => dispatch({ type: "IMPORT_DATA", payload: data })} />
       )}
       {state.notification && (
         <Toast notification={state.notification} onClose={() => dispatch({ type: "CLEAR_NOTIFICATION" })} />
